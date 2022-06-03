@@ -1,0 +1,43 @@
+#cloud-config
+debug: True
+ssh_pwauth: True
+disable_root: false
+chpasswd:
+  list: |
+    ubuntu:postel2SDPP1
+    root:postel2SDPP1
+    expire: False
+
+write_files:
+  - path: /root/test.sh
+    content: |
+        #!/bin/bash
+        vmtoolsd --cmd 'info-get guestinfo.ovfEnv' > /tmp/ovfenv
+        IPAddress=$(sed -n 's/.*Property oe:key="guestinfo.interface.0.ip.0.address" oe:value="\([^"]*\).*/\1/p' /tmp/ovfenv)
+        SubnetMask=$(sed -n 's/.*Property oe:key="guestinfo.interface.0.ip.0.netmask" oe:value="\([^"]*\).*/\1/p' /tmp/ovfenv)
+        Gateway=$(sed -n 's/.*Property oe:key="guestinfo.interface.0.route.0.gateway" oe:value="\([^"]*\).*/\1/p' /tmp/ovfenv)
+        DNS=$(sed -n 's/.*Property oe:key="guestinfo.dns.servers" oe:value="\([^"]*\).*/\1/p' /tmp/ovfenv)
+ 
+        cat > /etc/netplan/01-netcfg.yaml <<EOF
+        network:
+          version: 2
+          renderer: networkd
+          ethernets:
+            ens192:
+              addresses: 
+                - $IPAddress/24
+              gateway4: $Gateway
+              nameservers:
+                addresses : [$DNS]
+        EOF
+ 
+cloud_config_modules:
+  - runcmd
+
+cloud_final_modules:
+  - scripts-user
+runcmd:
+  - sudo bash /root/test.sh
+  - sudo netplan apply
+  - sed -i'.orig' -e's/without-password/yes/' /etc/ssh/sshd_config
+  - service sshd restart
